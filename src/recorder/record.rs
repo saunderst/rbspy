@@ -1,10 +1,12 @@
 use anyhow::{Context, Error, Result};
 use std::fs::File;
 use std::path::PathBuf;
+use std::sync::mpsc::{Sender, SyncSender};
 use std::sync::{Arc, Mutex};
 
+use crate::core::types::StackTrace;
 use crate::storage::Store;
-use crate::ui::summary;
+use crate::ui::{output, summary};
 
 /// A configuration bundle for the recorder
 pub struct Config {
@@ -69,6 +71,21 @@ impl Recorder {
         }
     }
 
+    pub fn start_sampler(
+        &self,
+        trace_sender: SyncSender<StackTrace>,
+        result_sender: Sender<Result<(), Error>>,
+    ) -> Result<(), Error> {
+        self.sampler.start(trace_sender, result_sender)
+    }
+
+    pub fn outputter(&self) -> (Option<&PathBuf>, Option<Box<dyn output::Outputter>>) {
+        match self.out_path {
+            Some(_) => (self.out_path.as_ref(), Some(self.format.clone().outputter(self.flame_min_width))),
+            None => (None, None)
+        }
+    }
+
     /// Records traces until the process exits or the stop function is called
     pub fn record(&self) -> Result<(), Error> {
         // Create the sender/receiver channels and start the child threads off collecting stack traces
@@ -77,15 +94,14 @@ impl Recorder {
         // traces, but not an unbounded buffer.
         let (trace_sender, trace_receiver) = std::sync::mpsc::sync_channel(100);
         let (result_sender, result_receiver) = std::sync::mpsc::channel();
-        self.sampler.start(trace_sender, result_sender)?;
+        self.start_sampler(trace_sender, result_sender)?;
 
         // Aggregate stack traces as we receive them from the threads that are collecting them
         // Aggregate to 3 places: the raw output (`.raw.gz`), some summary statistics we display live,
         // and the formatted output (a flamegraph or something)
-        let mut out = None;
-        if self.out_path.is_some() {
-            out = Some(self.format.clone().outputter(self.flame_min_width));
-        }
+        
+        let (out_path, mut out) = self.outputter();
+
         let mut raw_store = None;
         if let Some(raw_path) = &self.raw_path {
             raw_store = Some(Store::new(&raw_path, self.sample_rate)?);
@@ -104,7 +120,7 @@ impl Recorder {
         }
 
         // Finish writing all data to disk
-        if let (Some(out), Some(out_path)) = (&mut out, self.out_path.as_ref()) {
+        if let (Some(out), Some(out_path)) = (&mut out, out_path) {
             if out_path.display().to_string() == "-" {
                 out.complete(&mut std::io::stdout())?;
             } else {
