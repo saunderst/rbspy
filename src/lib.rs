@@ -37,7 +37,7 @@ mod core;
 pub mod recorder;
 mod sampler;
 mod storage;
-mod ui;
+pub mod ui;
 
 pub use crate::core::process::Pid;
 pub use crate::core::types::OutputFormat;
