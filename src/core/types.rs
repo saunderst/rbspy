@@ -137,6 +137,7 @@ arg_enum! {
         collapsed,
         callgrind,
         speedscope,
+        pprof,
         summary,
         summary_by_line,
     }
@@ -149,6 +150,7 @@ impl OutputFormat {
             OutputFormat::collapsed => Box::new(output::Collapsed::default()),
             OutputFormat::callgrind => Box::new(output::Callgrind(callgrind::Stats::new())),
             OutputFormat::speedscope => Box::new(output::Speedscope(speedscope::Stats::new())),
+            OutputFormat::pprof => Box::new(output::Pprof(pprof::Stats::new())),
             OutputFormat::summary => Box::new(output::Summary(summary::Stats::new())),
             OutputFormat::summary_by_line => Box::new(output::SummaryLine(summary::Stats::new())),
         }
@@ -160,6 +162,7 @@ impl OutputFormat {
             OutputFormat::collapsed => "collapsed.txt",
             OutputFormat::callgrind => "callgrind.txt",
             OutputFormat::speedscope => "speedscope.json",
+            OutputFormat::pprof => "profile.pb",
             OutputFormat::summary => "summary.txt",
             OutputFormat::summary_by_line => "summary_by_line.txt",
         }
