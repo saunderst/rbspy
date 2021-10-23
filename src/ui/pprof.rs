@@ -29,6 +29,7 @@ pub struct Stats {
     profile: Profile,
     prev_time: Option<SystemTime>,
     known_frames: HashMap<StackFrame, u64>,
+    traces: Vec<StackTrace>
 }
 
 impl Stats {
@@ -45,92 +46,100 @@ impl Stats {
 
     pub fn record(&mut self, stack: &StackTrace) -> Result<()> {
         let mut ms_since_last_sample: i64 = 0;
-        let time = stack.time.unwrap_or(SystemTime::now());
+        let time = stack.time.unwrap_or_else(SystemTime::now);
         if let Some(prev_time) = self.prev_time {
             ms_since_last_sample = time.duration_since(prev_time)?.as_millis() as i64;
         }
         self.prev_time = Some(time);
 
         self.add_sample(stack, ms_since_last_sample);
+        // self.traces.push(stack.to_owned());
 
         Ok(())
     }
 
     fn add_sample(&mut self, stack: &StackTrace, sample_time: i64) {
         let s = Sample {
-            location_id: self.location_id(stack),
+            location_id: self.location_ids(stack),
             value: vec![sample_time],
             label: self.labels(stack),
         };
+        self.profile.sample.push(s);
     }
 
-    fn location_id(&mut self, stack: &StackTrace) -> Vec<u64> {
-        let locations = <Vec<u64>>::new();
+    fn location_ids(&mut self, stack: &StackTrace) -> Vec<u64> {
+        let mut ids = <Vec<u64>>::new();
 
-        for frame in stack.trace {
-            locations.push(self.get_location_id(frame));
+        for frame in &stack.trace {
+            ids.push(self.get_or_create_location_id(frame));
         }
-        locations
+        ids
     }
 
-    fn get_location_id(&mut self, frame: StackFrame) -> u64 {
-        if let Some(id) = self.known_frames.get(&frame) {
+    fn get_or_create_location_id(&mut self, frame: &StackFrame) -> u64 {
+        // our lookup table has the arbitrary ids (1..n) we use for location ids
+        if let Some(id) = self.known_frames.get(frame) {
             *id
         } else {
-            let next_id = std::cmp::max(1, self.known_frames.len()) as u64;
-            self.known_frames.insert(frame, next_id);
-            self.add_new_location(next_id, frame);
+            let next_id = self.known_frames.len() as u64 + 1; //ids must be non-0, so start at 1
+            self.known_frames.insert(frame.clone(), next_id); // add to our lookup table
+            let newloc = self.new_location(next_id, frame); // use the same id for the location table
+            self.profile.location.push(newloc);
             next_id
         }
     }
 
-    fn add_new_location(&mut self, id: u64, frame: StackFrame) {
+    fn new_location(&mut self, id: u64, frame: &StackFrame) -> Location {
         let new_line = Line {
-            function_id: self.get_function_id(frame),
+            function_id: self.get_or_create_function_id(frame),
             line: frame.lineno as i64,
         };
-        let new_location = Location {
-            id: id,
+        Location {
+            id,
             line: vec![new_line],
             ..Location::default()
-        };
-        self.profile.location.push(new_location);
+        }
     }
 
-    fn get_function_id(&self, frame: StackFrame) -> u64 {
-        let names = self.profile.string_table;
-        let functions = self.profile.function.iter();
+    fn get_or_create_function_id(&mut self, frame: &StackFrame) -> u64 {
+        let strings = &self.profile.string_table;
+        let mut functions = self.profile.function.iter();
         if let Some(function) = functions.find(|f| {
-            names[f.name as usize] == frame.name
-                && names[f.filename as usize] == frame.relative_path
+            frame.name == strings[f.name as usize]
+                && frame.relative_path == strings[f.filename as usize]
         }) {
             function.id
         } else {
-            let next_id = match functions.map(|f| f.id).max() {
+            let functions = self.profile.function.iter();
+            let mapped_iter = functions.map(|f| f.id);
+            let max_map = mapped_iter.max();
+            // let next_id = match functions.map(|f| f.id).max() {
+            let next_id = match max_map {
                 Some(id) => id + 1,
                 None => 1,
             };
-            self.add_new_function(next_id, frame);
+            let f = self.new_function(next_id, frame);
+            self.profile.function.push(f);
             next_id
         }
     }
 
-    fn add_new_function(&mut self, id: u64, frame: StackFrame) {
-        let new_function = Function {
+    fn new_function(&mut self, id: u64, frame: &StackFrame) -> Function {
+        Function {
             id,
-            name: self.string_id(frame.name),
-            filename: self.string_id(frame.relative_path),
+            name: self.string_id(&frame.name),
+            filename: self.string_id(&frame.relative_path),
             ..Function::default()
-        };
+        }
     }
 
-    fn string_id(&mut self, text: String) -> i64 {
+    fn string_id(&mut self, text: &str) -> i64 {
         let strings = &mut self.profile.string_table;
-        if let Some(id) = strings.iter().position(|s| *s == text) {
+        if let Some(id) = strings.iter().position(|s| *s == *text) {
             id as i64
         } else {
             let next_id = strings.len() as i64;
-            strings.push(text);
+            strings.push((*text).to_owned());
             next_id
         }
     }
@@ -139,14 +148,14 @@ impl Stats {
         let mut labels: Vec<Label> = Vec::new();
         if let Some(pid) = stack.pid {
             labels.push(Label {
-                key: self.string_id("pid".to_string()),
+                key: self.string_id(&"pid".to_string()),
                 num: pid as i64,
                 ..Label::default()
             });
         }
         if let Some(thread_id) = stack.thread_id {
             labels.push(Label {
-                key: self.string_id("thread_id".to_string()),
+                key: self.string_id(&"thread_id".to_string()),
                 num: thread_id as i64,
                 ..Label::default()
             });
@@ -154,23 +163,8 @@ impl Stats {
         labels
     }
 
-    pub fn write(&self, mut w: &mut dyn Write) -> Result<()> {
+    pub fn write(&self, _w: &mut dyn Write) -> Result<()> {
+        println!("{:?}", self.profile);
         Ok(())
     }
 }
-
-/*
-    pub struct StackFrame {
-        pub name: String,
-        pub relative_path: String,
-        pub absolute_path: Option<String>,
-        pub lineno: u32,
-    }
-
-    pub struct StackTrace {
-        pub trace: Vec<StackFrame>,
-        pub pid: Option<Pid>,
-        pub thread_id: Option<usize>,
-        pub time: Option<SystemTime>,
-    }
-*/

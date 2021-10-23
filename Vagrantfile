@@ -6,6 +6,8 @@ Vagrant.configure("2") do |config|
 
   # Start shell in our package directory.
   config.ssh.extra_args = ["-t", "cd /vagrant; ls; bash --login"]
+
+  config.vm.network "forwarded_port", guest: 5000, host: 8080
     
   config.vm.provider "virtualbox" do |vb|
     # Customize the amount of memory on the VM:
@@ -21,6 +23,9 @@ Vagrant.configure("2") do |config|
 
     sudo snap install go --classic
     sudo snap install ruby --classic
+    sudo apt-get update
+    sudo apt-get install -y gdb
+    pip install gdbgui
   SHELL
 end
 
