@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, time::Duration};
 use std::io::Write;
 use std::time::SystemTime;
 
@@ -16,7 +16,7 @@ use anyhow::Result;
  * file containing the data structures is written to perftools.profiles.rs at
  * build time.
  */
-// use prost::Message;
+use prost::Message;
 
 // include!(concat!(env!("OUT_DIR"), "/perftools.profiles.rs"));
 pub mod pprofs {
@@ -164,7 +164,10 @@ impl Stats {
     }
 
     pub fn write(&self, _w: &mut dyn Write) -> Result<()> {
-        println!("{:?}", self.profile);
+        let mut file = std::fs::File::create("profile.pb").unwrap();
+        let mut content = Vec::new();
+        self.profile.encode(&mut content).unwrap();
+        file.write_all(&content).unwrap();
         Ok(())
     }
 }
