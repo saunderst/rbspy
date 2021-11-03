@@ -1,5 +1,6 @@
+use flate2::{write::GzEncoder, Compression};
 use std::collections::HashMap;
-use std::io::Write;
+use std::io::prelude::*;
 use std::time::SystemTime;
 
 use crate::core::types::{StackFrame, StackTrace};
@@ -155,18 +156,22 @@ impl Stats {
             previous_time = stack.time;
         }
 
-        let mut content = Vec::new();
-        self.profile.encode(&mut content)?;
-        w.write_all(&content)?;
+        let mut pprof_data = Vec::new();
+        let mut gzip = GzEncoder::new(Vec::new(), Compression::default());
+
+        self.profile.encode(&mut pprof_data)?;
+        gzip.write_all(&pprof_data)?;
+        w.write_all(&gzip.finish()?)?;
+
         Ok(())
     }
 }
 
 #[cfg(test)]
 mod test {
-    use std::time::Duration;
-
     use crate::ui::pprof::*;
+    use flate2::read::GzDecoder;
+    use std::time::Duration;
 
     // Build a test stacktrace
     fn s(frames: Vec<StackFrame>, time: SystemTime) -> StackTrace {
@@ -218,13 +223,15 @@ mod test {
 
     #[test]
     fn can_collect_traces_and_write_to_pprof_format() {
-        let mut write_buf: Vec<u8> = Vec::new();
-
+        let mut gz_stats_buf: Vec<u8> = Vec::new();
         let mut stats = test_stats();
-        stats.write(&mut write_buf).expect("write failed");
+        stats.write(&mut gz_stats_buf).expect("write failed");
 
-        let read_buf: &[u8] = &write_buf; // need type conversion for decode method
-        let actual = pprofs::Profile::decode(read_buf).expect("decode failed");
+        let mut gz = GzDecoder::new(&*gz_stats_buf);
+        let mut stats_buf = Vec::new();
+        gz.read_to_end(&mut stats_buf).unwrap();
+
+        let actual = pprofs::Profile::decode(&*stats_buf).expect("decode failed");
         let expected = Profile {
             sample_type: vec![ValueType { r#type: 1, unit: 2 }],
             sample: vec![

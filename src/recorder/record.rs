@@ -81,8 +81,11 @@ impl Recorder {
 
     pub fn outputter(&self) -> (Option<&PathBuf>, Option<Box<dyn output::Outputter>>) {
         match self.out_path {
-            Some(_) => (self.out_path.as_ref(), Some(self.format.clone().outputter(self.flame_min_width))),
-            None => (None, None)
+            Some(_) => (
+                self.out_path.as_ref(),
+                Some(self.format.clone().outputter(self.flame_min_width)),
+            ),
+            None => (None, None),
         }
     }
 
@@ -99,7 +102,7 @@ impl Recorder {
         // Aggregate stack traces as we receive them from the threads that are collecting them
         // Aggregate to 3 places: the raw output (`.raw.gz`), some summary statistics we display live,
         // and the formatted output (a flamegraph or something)
-        
+
         let (out_path, mut out) = self.outputter();
 
         let mut raw_store = None;

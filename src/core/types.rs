@@ -162,7 +162,7 @@ impl OutputFormat {
             OutputFormat::collapsed => "collapsed.txt",
             OutputFormat::callgrind => "callgrind.txt",
             OutputFormat::speedscope => "speedscope.json",
-            OutputFormat::pprof => "profile.pb",
+            OutputFormat::pprof => "profile.pb.gz",
             OutputFormat::summary => "summary.txt",
             OutputFormat::summary_by_line => "summary_by_line.txt",
         }
