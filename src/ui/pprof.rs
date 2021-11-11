@@ -149,14 +149,17 @@ impl Stats {
         labels
     }
 
-    pub fn write(&mut self, w: &mut dyn Write) -> Result<()> {
+    pub fn encode_and_gzip(&mut self) -> Result<Vec<u8>> {
         let mut pprof_data = Vec::new();
         let mut gzip = GzEncoder::new(Vec::new(), Compression::default());
 
         self.profile.encode(&mut pprof_data)?;
         gzip.write_all(&pprof_data)?;
-        w.write_all(&gzip.finish()?)?;
+        Ok(gzip.finish()?)
+    }
 
+    pub fn write(&mut self, w: &mut dyn Write) -> Result<()> {
+        w.write_all(&self.encode_and_gzip()?)?;
         Ok(())
     }
 }
