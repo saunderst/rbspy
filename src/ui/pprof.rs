@@ -18,7 +18,7 @@ use self::pprofs::{Function, Label, Line, Location, Profile, Sample, ValueType};
 pub struct Stats {
     profile: Profile,
     known_frames: HashMap<StackFrame, u64>,
-    traces: Vec<StackTrace>,
+    prev_time: Option<SystemTime>,
 }
 
 impl Stats {
@@ -35,7 +35,13 @@ impl Stats {
     }
 
     pub fn record(&mut self, stack: &StackTrace) -> Result<()> {
-        self.traces.push(stack.to_owned());
+        let this_time = stack.time.unwrap_or_else(SystemTime::now);
+        let ns_since_last_sample = match self.prev_time {
+            Some(prev_time) => this_time.duration_since(prev_time)?.as_nanos(),
+            None => 0
+        } as i64;
+        self.add_sample(stack, ns_since_last_sample);
+        self.prev_time = Some(this_time);
         Ok(())
     }
 
@@ -144,18 +150,6 @@ impl Stats {
     }
 
     pub fn write(&mut self, w: &mut dyn Write) -> Result<()> {
-        let mut previous_time: Option<SystemTime> = None;
-
-        for stack in self.traces.to_owned().iter() {
-            let current_time = stack.time.unwrap();
-            let ns_since_last_sample = match previous_time {
-                Some(prev_time) => current_time.duration_since(prev_time)?.as_nanos(),
-                None => 0, // no previous time for comparison
-            } as i64;
-            self.add_sample(stack, ns_since_last_sample);
-            previous_time = stack.time;
-        }
-
         let mut pprof_data = Vec::new();
         let mut gzip = GzEncoder::new(Vec::new(), Compression::default());
 
