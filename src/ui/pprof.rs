@@ -25,8 +25,8 @@ impl Stats {
     pub fn new() -> Stats {
         Stats {
             profile: Profile {
-                // string index 0 must point to "" according to the .proto spec, while "wall" and "ns" are for our sample_type field
-                string_table: vec!["".to_string(), "wall".to_string(), "ns".to_string()],
+                // string index 0 must point to "" according to the .proto spec, while "wall" and "ms" are for our sample_type field
+                string_table: vec!["".to_string(), "wall".to_string(), "ms".to_string()],
                 sample_type: vec![ValueType { r#type: 1, unit: 2 }], // 1 and 2 are indexes from string_table
                 ..Profile::default()
             },
@@ -36,11 +36,11 @@ impl Stats {
 
     pub fn record(&mut self, stack: &StackTrace) -> Result<()> {
         let this_time = stack.time.unwrap_or_else(SystemTime::now);
-        let ns_since_last_sample = match self.prev_time {
-            Some(prev_time) => this_time.duration_since(prev_time)?.as_nanos(),
-            None => 0
-        } as i64;
-        self.add_sample(stack, ns_since_last_sample);
+        let ms_since_last_sample = (match self.prev_time {
+            Some(prev_time) => this_time.duration_since(prev_time)?.as_secs_f64(),
+            None => 0.0
+        } * 1000.0).round() as i64;
+        self.add_sample(stack, ms_since_last_sample);
         self.prev_time = Some(this_time);
         Ok(())
     }
@@ -201,15 +201,15 @@ mod test {
         let mut stats = Stats::new();
         let mut time = SystemTime::now();
         stats.record(&s(vec![f(1)], time)).unwrap();
-        time += Duration::new(0, 2);
+        time += Duration::new(0, 2000000);
         stats.record(&s(vec![f(3), f(2), f(1)], time)).unwrap();
-        time += Duration::new(0, 4);
+        time += Duration::new(0, 4000000);
         stats.record(&s(vec![f(2), f(1)], time)).unwrap();
-        time += Duration::new(0, 6);
+        time += Duration::new(0, 6000000);
         stats.record(&s(vec![f(3), f(1)], time)).unwrap();
-        time += Duration::new(0, 8);
+        time += Duration::new(0, 8000000);
         stats.record(&s(vec![f(2), f(1)], time)).unwrap();
-        time += Duration::new(0, 10);
+        time += Duration::new(0, 10000000);
         stats.record(&s(vec![f(3), fdup(), f(1)], time)).unwrap();
 
         stats
@@ -414,7 +414,7 @@ mod test {
             string_table: vec![
                 "".to_string(),
                 "wall".to_string(),
-                "ns".to_string(),
+                "ms".to_string(),
                 "func1".to_string(),
                 "file1.rb".to_string(),
                 "pid".to_string(),
